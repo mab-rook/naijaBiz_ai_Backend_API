@@ -1,0 +1,11 @@
+node_modules/
+.env
+uploads/*
+!uploads/.gitkeep
+npm-debug.log*
+.DS_Store
+
+# Local notes and templates, not published
+AGENTS.md
+.env.example
+docs/ML_INTEGRATION_CONTRACT.md

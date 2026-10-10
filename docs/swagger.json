@@ -1,0 +1,2390 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "NaijaBiz AI Backend API",
+    "version": "1.0.0",
+    "description": "REST API contract and orchestration layer for NaijaBiz AI: An AI-powered operating system for Nigerian SMEs. Supports voice, text, receipt OCR, inventory management, customer debts ledger, proactive alerts, and the strict 'Confirm-then-commit' business logic."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "serviceApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "ML service only: INTERNAL_SERVICE_API_KEY"
+      },
+      "serviceBusinessId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Business-Id",
+        "description": "ML service only: the business to read"
+      }
+    },
+    "schemas": {
+      "AIActionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "651a9f123bc4567890abcdef"
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "add_inventory",
+              "record_sale",
+              "record_expense",
+              "query",
+              "record_debt_payment",
+              "affordability_check"
+            ],
+            "example": "add_inventory"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "yo",
+              "ha",
+              "ig"
+            ],
+            "example": "en"
+          },
+          "transcript": {
+            "type": "string",
+            "example": "I bought 50 bags of rice for 4 million naira"
+          },
+          "confidence": {
+            "type": "number",
+            "example": 0.96
+          },
+          "confirmationMessage": {
+            "type": "string",
+            "example": "Add 50 bag(s) of Mama Gold Rice 50kg at ₦80,000 each (Total: ₦4,000,000)?"
+          },
+          "entities": {
+            "type": "object",
+            "properties": {
+              "product": {
+                "type": "string",
+                "example": "Mama Gold Rice 50kg"
+              },
+              "quantity": {
+                "type": "number",
+                "example": 50
+              },
+              "unit": {
+                "type": "string",
+                "example": "bag"
+              },
+              "totalAmount": {
+                "type": "number",
+                "example": 4000000
+              },
+              "amountPaid": {
+                "type": "number",
+                "nullable": true,
+                "example": 1000,
+                "description": "Amount received for a sale; required when paymentStatus is partial"
+              },
+              "paymentStatus": {
+                "type": "string",
+                "enum": [
+                  "paid",
+                  "partial",
+                  "unpaid"
+                ]
+              },
+              "unitCost": {
+                "type": "number",
+                "example": 80000
+              },
+              "customer": {
+                "type": "string",
+                "nullable": true
+              },
+              "category": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "confirmed",
+              "rejected"
+            ],
+            "example": "proposed"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "ml",
+              "local"
+            ],
+            "example": "ml",
+            "description": "\"ml\" = produced by the ML service; \"local\" = backend rule-based fallback (ML unavailable)"
+          },
+          "lowConfidence": {
+            "type": "boolean",
+            "example": false,
+            "description": "true when confidence is below ML_CONFIDENCE_THRESHOLD; the app should ask the merchant to check carefully or repeat"
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "true if the merchant edited this proposal"
+          }
+        }
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "properties": {
+          "revenue": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "number",
+                "example": 367500
+              },
+              "today": {
+                "type": "number",
+                "example": 10000
+              },
+              "cashCollected": {
+                "type": "number",
+                "example": 272500
+              }
+            }
+          },
+          "expenses": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "number",
+                "example": 110000
+              },
+              "byCategory": {
+                "type": "object",
+                "example": {
+                  "rent": 50000,
+                  "transport": 15000,
+                  "power": 20000,
+                  "wages": 25000
+                }
+              }
+            }
+          },
+          "profit": {
+            "type": "object",
+            "properties": {
+              "grossProfit": {
+                "type": "number",
+                "example": 38100
+              },
+              "netProfit": {
+                "type": "number",
+                "example": -71900
+              },
+              "profitMarginPercent": {
+                "type": "number",
+                "example": -20
+              }
+            }
+          },
+          "inventory": {
+            "type": "object",
+            "properties": {
+              "totalProducts": {
+                "type": "number",
+                "example": 6
+              },
+              "stockCostValue": {
+                "type": "number",
+                "example": 2027500
+              },
+              "lowStockCount": {
+                "type": "number",
+                "example": 3
+              }
+            }
+          },
+          "debts": {
+            "type": "object",
+            "properties": {
+              "totalOutstanding": {
+                "type": "number",
+                "example": 177000
+              },
+              "activeDebtorsCount": {
+                "type": "number",
+                "example": 4
+              }
+            }
+          },
+          "cashPosition": {
+            "type": "number",
+            "example": 162500
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, invalid or expired token. `code` tells the app what to do: TOKEN_MISSING / TOKEN_INVALID / USER_NOT_FOUND -> go to login; TOKEN_EXPIRED -> \"session expired\", log in again.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "TOKEN_MISSING",
+                    "TOKEN_INVALID",
+                    "TOKEN_EXPIRED",
+                    "USER_NOT_FOUND"
+                  ],
+                  "example": "TOKEN_EXPIRED"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Your session has expired. Please log in again."
+                }
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limited. Wait `retryAfterSeconds` (also in the Retry-After header).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "RATE_LIMITED"
+                  ],
+                  "example": "RATE_LIMITED"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Too many login attempts for this phone number. Please wait 15 minutes and try again."
+                }
+              }
+            }
+          }
+        }
+      },
+      "ActionNotFound": {
+        "description": "No such AI action for this business",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "ACTION_NOT_FOUND"
+                  ],
+                  "example": "ACTION_NOT_FOUND"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "AI proposed action not found"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ActionNotPending": {
+        "description": "The action was already confirmed, rejected or is being confirmed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "ACTION_NOT_PENDING",
+                    "ACTION_CONFLICT"
+                  ],
+                  "example": "ACTION_NOT_PENDING"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Cannot confirm action with status: confirmed"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ActionUnprocessable": {
+        "description": "The action cannot be saved as it is. Show the message and let the merchant Edit it.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean",
+                  "example": false
+                },
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "CUSTOMER_REQUIRED",
+                    "PRODUCT_NOT_FOUND",
+                    "DEBT_NOT_FOUND",
+                    "AMOUNT_REQUIRED",
+                    "ITEM_PRODUCT_REQUIRED",
+                    "NOT_EDITABLE"
+                  ],
+                  "example": "CUSTOMER_REQUIRED"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "A credit sale needs the customer's name. Edit the action and add the customer."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register merchant user and business",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "phone",
+                  "password"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Alhaja Kudirat Balogun"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "example": "08023456789"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "password123"
+                  },
+                  "businessName": {
+                    "type": "string",
+                    "example": "Kudirat & Sons Provisions"
+                  },
+                  "preferredLanguage": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "yo",
+                      "ha",
+                      "ig"
+                    ],
+                    "example": "en"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registration successful"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login with phone number and password",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone",
+                  "password"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "08023456789"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "password123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful and JWT returned"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "summary": "Rotate refresh token and issue a new access JWT",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "description": "Opaque 80-character token returned by register, login, or the previous refresh."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New access and rotated refresh tokens"
+          },
+          "400": {
+            "description": "Missing or malformed request"
+          },
+          "401": {
+            "description": "Invalid, expired, or replayed refresh token"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Immediately revoke the current access token and optionally its refresh token",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refresh session revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "Requires a Bearer access JWT. If refreshToken is supplied, it is revoked only if it belongs to the authenticated user.",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "summary": "Revoke all access and refresh sessions for the current user",
+        "responses": {
+          "200": {
+            "description": "All existing access JWTs and refresh sessions revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "summary": "Get business dashboard totals, profit & loss, stock value, alerts",
+        "responses": {
+          "200": {
+            "description": "Dashboard data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DashboardResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/api/products": {
+      "get": {
+        "summary": "List all products in inventory",
+        "responses": {
+          "200": {
+            "description": "List of products"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Products"
+        ]
+      },
+      "post": {
+        "summary": "Add a new product",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "sellingPrice",
+                  "costPrice"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Golden Terra Vegetable Oil 25L"
+                  },
+                  "category": {
+                    "type": "string",
+                    "example": "Cooking Essentials"
+                  },
+                  "unit": {
+                    "type": "string",
+                    "example": "carton"
+                  },
+                  "sellingPrice": {
+                    "type": "number",
+                    "example": 50000
+                  },
+                  "costPrice": {
+                    "type": "number",
+                    "example": 45000
+                  },
+                  "minimumStock": {
+                    "type": "number",
+                    "example": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Validation failed (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "description": "`currentStock` is the opening stock: it is recorded as an \"adjustment\" stock movement, so stock always equals the sum of movements.",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/stock": {
+      "get": {
+        "summary": "Get current stock levels, valuation, and days of stock left",
+        "responses": {
+          "200": {
+            "description": "Stock valuation and days remaining"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Stock"
+        ]
+      }
+    },
+    "/api/stock/movements": {
+      "post": {
+        "summary": "Manually record stock movement",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productId",
+                  "type",
+                  "quantity"
+                ],
+                "properties": {
+                  "productId": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "purchase",
+                      "sale",
+                      "damaged",
+                      "expired",
+                      "adjustment"
+                    ]
+                  },
+                  "quantity": {
+                    "type": "number"
+                  },
+                  "unitCost": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Movement recorded"
+          },
+          "400": {
+            "description": "INVALID_MOVEMENT_TYPE / INVALID_QUANTITY (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "PRODUCT_NOT_FOUND (body: { success:false, code, message })"
+          },
+          "409": {
+            "description": "INSUFFICIENT_STOCK (outflow larger than stock) (body: { success:false, code, message })"
+          }
+        },
+        "tags": [
+          "Stock"
+        ]
+      },
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "summary": "Stock movement history (latest 100)",
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "description": "Only this product",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "purchase | sale | damaged | expired | adjustment",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Movements"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/sales": {
+      "post": {
+        "summary": "Record a sale manually (deducts stock, logs debt if credit)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "productId": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "example": 5
+                        },
+                        "unitPrice": {
+                          "type": "number",
+                          "example": 400
+                        }
+                      }
+                    }
+                  },
+                  "customerName": {
+                    "type": "string",
+                    "example": "Mama Chinedu"
+                  },
+                  "paymentStatus": {
+                    "type": "string",
+                    "enum": [
+                      "paid",
+                      "partial",
+                      "unpaid"
+                    ],
+                    "example": "paid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sale created"
+          },
+          "400": {
+            "description": "ITEMS_REQUIRED / INVALID_QUANTITY / INVALID_PRICE / INVALID_AMOUNT / TOTAL_MISMATCH / PAYMENT_STATUS_MISMATCH / CUSTOMER_REQUIRED (unpaid or part-paid sale without customerName) (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "PRODUCT_NOT_FOUND (body: { success:false, code, message })"
+          },
+          "409": {
+            "description": "INSUFFICIENT_STOCK: nothing was recorded (body: { success:false, code, message })"
+          }
+        },
+        "tags": [
+          "Sales"
+        ]
+      },
+      "get": {
+        "tags": [
+          "Sales"
+        ],
+        "summary": "List sales (latest 100)",
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "description": "ISO date",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "description": "ISO date",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "in": "query",
+            "required": false,
+            "description": "paid | partial | unpaid",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sales"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/expenses": {
+      "post": {
+        "summary": "Record an expense (rent, transport, power, etc.)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "category",
+                  "amount"
+                ],
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "rent",
+                      "transport",
+                      "power",
+                      "wages",
+                      "repairs",
+                      "security",
+                      "food",
+                      "other"
+                    ],
+                    "example": "transport"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "example": 15000
+                  },
+                  "note": {
+                    "type": "string",
+                    "example": "Paid 15,000 for transport to Alaba"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Expense logged"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Expenses"
+        ]
+      },
+      "get": {
+        "tags": [
+          "Expenses"
+        ],
+        "summary": "List expenses (latest 100) with totalAmount",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "Expense category",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "description": "ISO date",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "description": "ISO date",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Expenses"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/debts": {
+      "get": {
+        "summary": "Get customer debt ledger with ageing breakdown (<7d, 8-14d, 15-30d, >30d)",
+        "responses": {
+          "200": {
+            "description": "Debts and ageing report"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Debts & customers"
+        ]
+      }
+    },
+    "/api/debts/payments": {
+      "post": {
+        "summary": "Record customer debt repayment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "debtId",
+                  "amount"
+                ],
+                "properties": {
+                  "debtId": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "example": 10000
+                  },
+                  "note": {
+                    "type": "string",
+                    "example": "Cash repayment"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repayment logged"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Debts & customers"
+        ]
+      }
+    },
+    "/api/debts/reminders/{debtId}": {
+      "get": {
+        "summary": "Generate localized debt reminder message draft (English, Yoruba, Hausa, Igbo)",
+        "parameters": [
+          {
+            "name": "debtId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "yo",
+                "ha",
+                "ig"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reminder drafts"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Debts & customers"
+        ]
+      }
+    },
+    "/api/ai/voice": {
+      "post": {
+        "summary": "Process voice input (audio file or transcript) and return proposed AI action",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transcript": {
+                    "type": "string",
+                    "example": "I bought 50 bags of rice for 4 million naira"
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "yo",
+                      "ha",
+                      "ig"
+                    ],
+                    "example": "en"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "description": "Authenticated upload. Audio must be M4A/MP4, AAC, MP3, WAV, OGG, or WebM and match its file signature; maximum 10 MB.",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "audio": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "language": {
+                    "type": "string",
+                    "example": "yo"
+                  },
+                  "transcript": {
+                    "type": "string",
+                    "description": "Optional: if sent, the audio is not transcribed again"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proposed action awaiting merchant confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "actionId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AIActionResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported audio type or file signature mismatch"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "description": "Audio exceeds 10 MB"
+          },
+          "422": {
+            "description": "Audio could not be transcribed (ML service unavailable) and no transcript was sent; ask the merchant to retry or type"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/ai/receipt": {
+      "post": {
+        "summary": "Process photographed supplier invoice OCR and return proposed inventory items",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "description": "Authenticated upload. Image must be JPEG, PNG, or WebP and match its file signature; maximum 10 MB.",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiptImageUrl": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proposed inventory restock action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "actionId": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AIActionResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/ai/text": {
+      "post": {
+        "summary": "Process natural language text command",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "example": "I paid 15,000 for transport"
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "yo",
+                      "ha",
+                      "ig"
+                    ],
+                    "example": "en"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proposed action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIActionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/ai/actions/{id}/confirm": {
+      "post": {
+        "summary": "CONFIRM AND COMMIT: Executes the proposed action and persists changes to the database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action executed and committed to database"
+          },
+          "400": {
+            "description": "Unsupported image type or file signature mismatch"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ActionNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ActionNotPending"
+          },
+          "413": {
+            "description": "Image exceeds 10 MB"
+          },
+          "422": {
+            "$ref": "#/components/responses/ActionUnprocessable"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/ai/actions/{id}/reject": {
+      "post": {
+        "summary": "REJECT AND CANCEL: Discards proposed action without modifying business data",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action rejected"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ActionNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ActionNotPending"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/ai/ask": {
+      "post": {
+        "summary": "Ask My Business: Queries business data and answers conversationally in merchant's language",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "example": "How much rice do I have left?"
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "yo",
+                      "ha",
+                      "ig"
+                    ],
+                    "example": "en"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversational answer with backing figures. data.engine is \"ml\" or \"local\".",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "query": "How much rice do I have left?",
+                    "language": "en",
+                    "category": "stock_inquiry",
+                    "answer": "You currently have 18 bag(s) of Mama Gold Rice 50kg remaining. At your current sales rate, that will last approximately 99.0 days.",
+                    "data": {
+                      "productName": "Mama Gold Rice 50kg",
+                      "currentStock": 18,
+                      "unit": "bag",
+                      "daysRemaining": 99
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "summary": "Get proactive alerts feed",
+        "responses": {
+          "200": {
+            "description": "Alerts list"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/alerts/{id}/read": {
+      "patch": {
+        "summary": "Mark alert as read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert marked as read"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/alerts/generate": {
+      "post": {
+        "summary": "Trigger automated alert generation scan",
+        "responses": {
+          "200": {
+            "description": "Scan complete"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/ai/actions/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "AI assistant"
+        ],
+        "summary": "Get one AI action (reload the confirmation card), including editHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AIActionResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ActionNotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "AI assistant"
+        ],
+        "summary": "Edit a proposed action before confirming (the \"Edit\" button on the confirmation card)",
+        "description": "Send only the fields to change. Allowed fields per intent:\n- add_inventory: product, productId, quantity, unit, totalAmount, unitCost, supplier, items[] (items replaces the whole list; each item: productName, quantity, unitCost, unit)\n- record_sale: product, productId, quantity, unit, totalAmount, amountPaid, customer, customerId, paymentStatus, note. For partial payment, provide amountPaid and paymentStatus: partial.\n- record_expense: totalAmount, category, note\n- record_debt_payment: customer, customerId, debtId, totalAmount, note\n\nChanging `intent` starts from empty fields. Names are re-matched to products/customers, unit cost / totals are recalculated, and confirmationMessage is regenerated in the merchant language. Only allowed while status is \"proposed\".",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "intent": {
+                    "type": "string",
+                    "enum": [
+                      "add_inventory",
+                      "record_sale",
+                      "record_expense",
+                      "record_debt_payment"
+                    ]
+                  },
+                  "entities": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "examples": {
+                "fixQuantity": {
+                  "summary": "Fix quantity",
+                  "value": {
+                    "entities": {
+                      "quantity": 40
+                    }
+                  }
+                },
+                "addCreditCustomer": {
+                  "summary": "Add customer to a credit sale",
+                  "value": {
+                    "entities": {
+                      "customer": "Mama Tunde"
+                    }
+                  }
+                },
+                "editReceiptLines": {
+                  "summary": "Replace receipt lines",
+                  "value": {
+                    "entities": {
+                      "items": [
+                        {
+                          "productName": "Mama Gold Rice 50kg",
+                          "quantity": 18,
+                          "unit": "bag",
+                          "unitCost": 78000
+                        },
+                        {
+                          "productName": "Peak Milk Tin 400g",
+                          "quantity": 24,
+                          "unit": "tin",
+                          "unitCost": 2500
+                        }
+                      ]
+                    }
+                  }
+                },
+                "changeIntent": {
+                  "summary": "It was an expense, not a purchase",
+                  "value": {
+                    "intent": "record_expense",
+                    "entities": {
+                      "totalAmount": 15000,
+                      "category": "transport"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated proposal (still awaiting confirmation)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AIActionResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid edit (code INVALID_EDIT)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ActionNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ActionNotPending"
+          },
+          "422": {
+            "$ref": "#/components/responses/ActionUnprocessable"
+          }
+        }
+      }
+    },
+    "/api/ai/actions/{id}/media": {
+      "get": {
+        "summary": "Retrieve this action's private receipt or voice media",
+        "description": "Requires merchant authentication. The action is scoped to the caller's business; private Cloudinary content is proxied by the backend.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{24}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private media stream"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Media not found for this business/action"
+          },
+          "410": {
+            "description": "MEDIA_EXPIRED: the file was deleted after MEDIA_RETENTION_DAYS; the AI action record still exists"
+          },
+          "502": {
+            "description": "Private storage could not serve the media"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Current merchant profile with business",
+        "responses": {
+          "200": {
+            "description": "Profile"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/language": {
+      "put": {
+        "summary": "Set preferred language (stored on the profile)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "language"
+                ],
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "yo",
+                      "ha",
+                      "ig"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "Unsupported language (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/products/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get one product",
+        "responses": {
+          "200": {
+            "description": "Product"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found (body: { success:false, code, message })"
+          }
+        },
+        "tags": [
+          "Products"
+        ]
+      },
+      "put": {
+        "summary": "Update product details (not stock)",
+        "description": "Only the listed fields. Sending `currentStock` returns 400 STOCK_NOT_EDITABLE: use POST /api/stock/movements (adjustment, damaged, expired) instead. Unknown fields return 400 INVALID_FIELDS.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "sellingPrice": {
+                    "type": "number"
+                  },
+                  "costPrice": {
+                    "type": "number"
+                  },
+                  "minimumStock": {
+                    "type": "number"
+                  },
+                  "imageUrl": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "sellingPrice": 85000,
+                "minimumStock": 10
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "400": {
+            "description": "STOCK_NOT_EDITABLE / INVALID_FIELDS (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found (body: { success:false, code, message })"
+          }
+        },
+        "tags": [
+          "Products"
+        ]
+      },
+      "delete": {
+        "summary": "Delete product",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found (body: { success:false, code, message })"
+          }
+        },
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/purchases": {
+      "get": {
+        "summary": "List purchases (latest 100)",
+        "responses": {
+          "200": {
+            "description": "Purchases"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Purchases"
+        ]
+      },
+      "post": {
+        "summary": "Record a stock purchase (adds inventory)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "supplier": {
+                    "type": "string"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "productId": {
+                          "type": "string"
+                        },
+                        "productName": {
+                          "type": "string",
+                          "description": "Used (and created if new) when productId is not given"
+                        },
+                        "quantity": {
+                          "type": "number"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "unitCost": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  },
+                  "total": {
+                    "type": "number",
+                    "description": "Optional; must equal the sum of quantity × unitCost for all items."
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "voice",
+                      "text",
+                      "receipt"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "supplier": "Alaba Wholesale",
+                "items": [
+                  {
+                    "productId": "<productId>",
+                    "quantity": 20,
+                    "unitCost": 78000
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Purchase recorded"
+          },
+          "400": {
+            "description": "Validation failed, including TOTAL_MISMATCH if total differs from the item subtotals (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Purchases"
+        ]
+      }
+    },
+    "/api/debts/customers": {
+      "get": {
+        "summary": "List customers",
+        "responses": {
+          "200": {
+            "description": "Customers"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Debts & customers"
+        ]
+      },
+      "post": {
+        "summary": "Create customer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Debts & customers"
+        ]
+      }
+    },
+    "/api/ai/actions": {
+      "get": {
+        "summary": "AI action audit trail (latest 50)",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "proposed | executing | confirmed | rejected",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inputType",
+            "in": "query",
+            "required": false,
+            "description": "voice | receipt | text",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Actions"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "AI assistant"
+        ]
+      }
+    },
+    "/api/reports/profit-loss": {
+      "get": {
+        "summary": "Profit & loss",
+        "description": "Revenue, COGS, gross profit, expenses by category, net profit and per-product breakdown.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "serviceApiKey": [],
+            "serviceBusinessId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First day, YYYY-MM-DD (Lagos time). Default: 29 days before \"to\"",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day, YYYY-MM-DD (inclusive). Default: today",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report (in data)"
+          },
+          "400": {
+            "description": "Invalid parameters (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/api/reports/cash-flow": {
+      "get": {
+        "summary": "Cash flow series",
+        "description": "Cash in = sale receipts + debt repayments; cash out = expenses + stock purchases. Continuous series (empty periods are zero) with cumulative net.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "serviceApiKey": [],
+            "serviceBusinessId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First day, YYYY-MM-DD (Lagos time). Default: 29 days before \"to\"",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day, YYYY-MM-DD (inclusive). Default: today",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "required": false,
+            "description": "day (default) or week (weeks start Monday)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report (in data)"
+          },
+          "400": {
+            "description": "Invalid parameters (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/api/reports/top-products": {
+      "get": {
+        "summary": "Best-selling products",
+        "description": "",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "serviceApiKey": [],
+            "serviceBusinessId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First day, YYYY-MM-DD (Lagos time). Default: 29 days before \"to\"",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day, YYYY-MM-DD (inclusive). Default: today",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "by",
+            "in": "query",
+            "required": false,
+            "description": "revenue (default) | quantity | profit",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1-50, default 5",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report (in data)"
+          },
+          "400": {
+            "description": "Invalid parameters (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/api/reports/sales-rate": {
+      "get": {
+        "summary": "Per-product sales rate (for stock-out forecasts)",
+        "description": "avgDailyUnits over the window and daysOfStockLeft (null if nothing sold).",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "serviceApiKey": [],
+            "serviceBusinessId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "Window, 1-180, default 14",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report (in data)"
+          },
+          "400": {
+            "description": "Invalid parameters (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/api/reports/daily-sales": {
+      "get": {
+        "summary": "Daily sales series (forecasting, weekend demand)",
+        "description": "One row per day with dayOfWeek, plus average revenue per weekday.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "serviceApiKey": [],
+            "serviceBusinessId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "1-366, default 30",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "description": "Only this product",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report (in data)"
+          },
+          "400": {
+            "description": "Invalid parameters (body: { success:false, code, message })"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Other"
+        ],
+        "summary": "Health check (no auth)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "{ status, database, databaseType: \"mongodb\" | \"in-memory\", warning? }"
+          },
+          "503": {
+            "description": "Database not connected"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Dashboard"
+    },
+    {
+      "name": "Products"
+    },
+    {
+      "name": "Stock"
+    },
+    {
+      "name": "Sales"
+    },
+    {
+      "name": "Purchases"
+    },
+    {
+      "name": "Expenses"
+    },
+    {
+      "name": "Debts & customers"
+    },
+    {
+      "name": "Alerts"
+    },
+    {
+      "name": "AI assistant"
+    },
+    {
+      "name": "Reports"
+    }
+  ]
+}

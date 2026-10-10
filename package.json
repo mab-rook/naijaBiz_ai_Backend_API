@@ -1,0 +1,52 @@
+{
+  "name": "naijabiz-backend",
+  "version": "1.0.0",
+  "description": "Backend API for NaijaBiz AI - AI-powered operating system for Nigerian SMEs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node seed/seedData.js",
+    "test": "node --test tests/unit.test.js && node tests/api.test.js && node tests/demo.test.js && node tests/auth.test.js && node tests/aiEdit.test.js && node tests/alerts.test.js && node tests/scaling.test.js && node tests/reports.test.js && node tests/refreshToken.test.js && node tests/ml.test.js",
+    "test:api": "node tests/api.test.js",
+    "test:demo": "node tests/demo.test.js",
+    "test:auth": "node tests/auth.test.js",
+    "test:edit": "node tests/aiEdit.test.js",
+    "test:alerts": "node tests/alerts.test.js",
+    "test:scaling": "node tests/scaling.test.js",
+    "test:reports": "node tests/reports.test.js",
+    "test:refresh": "node tests/refreshToken.test.js",
+    "test:ml": "node tests/ml.test.js",
+    "mock:api": "npx -y @stoplight/prism-cli@5 mock -p 4010 docs/swagger.json"
+  },
+  "keywords": [
+    "naijabiz",
+    "nigeria",
+    "sme",
+    "voice-commerce",
+    "n-atlas",
+    "express",
+    "mongodb"
+  ],
+  "author": "NaijaBiz AI Team - Backend Lead",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "joi": "^17.13.3",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.8.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
