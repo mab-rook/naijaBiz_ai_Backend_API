@@ -10,6 +10,22 @@ which this backend calls over HTTP.
 
 Built with Node.js, Express, MongoDB (Mongoose), JWT authentication and Swagger (OpenAPI 3).
 
+## Live API
+
+| What | Where |
+| --- | --- |
+| API | <https://naijabiz-ai-backend-api.onrender.com/api> |
+| Docs | <https://naijabiz-ai-backend-api.onrender.com/api-docs> |
+| Health check | <https://naijabiz-ai-backend-api.onrender.com/health> |
+| Demo login | phone `08023456789`, password `password123` |
+
+The demo login opens a sample provisions shop with three weeks of sales, customers, debts and alerts.
+To try an endpoint in the docs, call `POST /api/auth/login` with the demo login, copy the `token`
+from the response, click **Authorize** and paste it in.
+
+The API runs on Render's free plan. If it has had no traffic for a while, the first request can take
+up to a minute while the server starts; after that it responds normally.
+
 ## What the backend does
 
 - **Nothing is saved until the trader confirms.** Voice, receipt and text inputs become a
