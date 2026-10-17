@@ -1,7 +1,8 @@
 /**
  * Test stand-in for the ML service, used by tests/ml.test.js.
- * It answers /transcribe, /interpret-command, /parse-receipt, /ask and /insights with simple
- * canned logic, in the same request and response shapes the real service is expected to use.
+ * Same paths and request/response shapes as the real ML service (its /openapi.json):
+ * /transcribe, /interpret, /parse-receipt, /ask, /insights, /forecast and /health,
+ * with simple canned logic instead of real models.
  */
 const express = require('express');
 const multer = require('multer');
@@ -20,27 +21,23 @@ const PRODUCT_SYNONYMS = {
   oil: ['oil', 'ororo', 'mai'],
   indomie: ['indomie', 'noodle', 'noodles'],
   coke: ['coke', 'coca-cola'],
-  sugar: ['sugar', 'suga'],
 };
 
-const parseContext = (raw) => {
-  if (!raw) return {};
-  if (typeof raw === 'object') return raw;
+const parseCatalogue = (raw) => {
+  if (Array.isArray(raw)) return raw;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw || '[]');
   } catch {
-    return {};
+    return [];
   }
 };
 
-const findProduct = (text, products = []) => {
+const findProduct = (text, catalogue = []) => {
   const lower = text.toLowerCase();
-  return products.find((p) => {
+  return catalogue.find((p) => {
     const name = p.name.toLowerCase();
     if (lower.includes(name)) return true;
-    return Object.entries(PRODUCT_SYNONYMS).some(
-      ([key, words]) => name.includes(key) && words.some((w) => lower.includes(w))
-    );
+    return Object.entries(PRODUCT_SYNONYMS).some(([key, words]) => name.includes(key) && words.some((w) => lower.includes(w)));
   });
 };
 
@@ -57,190 +54,129 @@ const parseQuantity = (text) => {
   return match ? parseInt(match[1], 10) : 1;
 };
 
+const proposal = (intent, language, transcript, entities, confidence, message) => ({
+  intent,
+  language,
+  transcript,
+  entities: {
+    product: null, matched_product_id: null, matched_product_name: null, quantity: null, unit: null,
+    total_amount: null, unit_cost: null, customer: null, category: null, paid: null,
+    ...entities,
+  },
+  confidence,
+  low_confidence: confidence < 0.6,
+  missing_fields: [],
+  confirmation_message: message,
+});
+
 const createMockMlApp = () => {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
 
-  // Optional shared-secret check, mirrors ML_API_KEY on the backend
+  // Same shared-key check as the real service
   app.use((req, res, next) => {
     const expected = process.env.MOCK_ML_API_KEY;
-    if (expected && req.get('X-API-Key') !== expected) {
-      return res.status(401).json({ error: 'invalid API key' });
-    }
+    if (expected && req.get('X-API-Key') !== expected) return res.status(401).json({ detail: 'Invalid API key' });
     next();
   });
 
   app.get('/health', (req, res) => res.json({ status: 'ok', mock: true }));
 
   app.post('/transcribe', upload.single('audio'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'audio file is required' });
+    if (!req.file) return res.status(422).json({ detail: 'audio is required' });
     const language = req.body.language || 'en';
-    res.json({
-      transcript: CANNED_TRANSCRIPTS[language] || CANNED_TRANSCRIPTS.en,
-      language,
-      confidence: 0.91,
-    });
+    res.json({ transcript: CANNED_TRANSCRIPTS[language] || CANNED_TRANSCRIPTS.en, language, confidence: 0.91 });
   });
 
-  app.post('/interpret-command', (req, res) => {
-    const { text = '', language = 'en', context = {} } = req.body;
+  app.post('/interpret', (req, res) => {
+    const { text = '', language = 'en', catalogue = [] } = req.body;
     const lower = text.toLowerCase();
-    const product = findProduct(text, context.products);
+    const product = findProduct(text, catalogue);
     const amount = parseAmount(text);
+    const matched = product ? { product: product.name, matched_product_id: product.id, matched_product_name: product.name } : {};
 
-    // Debt repayment: "<customer> paid me 5000"
     const repayment = lower.match(/^(.+?)\s+(?:paid me|paid back|repaid)\b/);
     if (repayment) {
-      const spoken = repayment[1].trim();
-      const customer = (context.customers || []).find((c) => c.name.toLowerCase().includes(spoken));
-      return res.json({
-        intent: 'record_debt_payment',
-        language,
-        transcript: text,
-        entities: { customer: customer ? customer.name : spoken, totalAmount: amount },
-        confidence: customer ? 0.88 : 0.45,
-        confirmationMessage: `Record payment of ₦${(amount || 0).toLocaleString()} from ${customer ? customer.name : spoken}?`,
-      });
+      return res.json(proposal('record_debt_payment', language, text, { customer: repayment[1].trim(), total_amount: amount }, 0.88,
+        `Record payment of ₦${(amount || 0).toLocaleString()} from ${repayment[1].trim()}?`));
     }
-
     if (/bought|buy|restock|mo ra|na sayi|azụtara/.test(lower)) {
       const quantity = parseQuantity(text);
-      return res.json({
-        intent: 'add_inventory',
-        language,
-        transcript: text,
-        entities: {
-          product: product ? product.name : 'Unknown product',
-          productId: product ? product.id : null,
-          quantity,
-          unit: /carton/.test(lower) ? 'carton' : 'bag',
-          totalAmount: amount,
-          unitCost: amount ? Math.round(amount / quantity) : null,
-        },
-        confidence: product ? 0.93 : 0.4,
-        confirmationMessage: `Add ${quantity} of ${product ? product.name : 'this product'}${
-          amount ? ` at ₦${Math.round(amount / quantity).toLocaleString()} each` : ''
-        }?`,
-      });
+      return res.json(proposal('add_inventory', language, text, {
+        ...matched, quantity, unit: /carton/.test(lower) ? 'carton' : 'bag', total_amount: amount,
+        unit_cost: amount ? Math.round(amount / quantity) : null,
+      }, product ? 0.93 : 0.4, `Add ${quantity} of ${product ? product.name : 'this product'}?`));
     }
-
     if (/sold|sell|mo ta|na sayar/.test(lower)) {
       const quantity = parseQuantity(text);
-      const credit = /credit|owe|gbese|bashi/.test(lower);
-      return res.json({
-        intent: 'record_sale',
-        language,
-        transcript: text,
-        entities: {
-          product: product ? product.name : 'Unknown product',
-          productId: product ? product.id : null,
-          quantity,
-          totalAmount: product ? product.sellingPrice * quantity : amount,
-          paymentStatus: credit ? 'unpaid' : 'paid',
-        },
-        confidence: product ? 0.9 : 0.4,
-        confirmationMessage: `Record sale of ${quantity} ${product ? product.name : 'items'}?`,
-      });
+      return res.json(proposal('record_sale', language, text, { ...matched, quantity, paid: !/credit|owe|gbese|bashi/.test(lower) },
+        product ? 0.9 : 0.4, `Record sale of ${quantity} ${product ? product.name : 'items'}?`));
     }
-
     if (/paid|spent|expense|mo san|na biya/.test(lower)) {
-      const category = /transport|bus|okada/.test(lower) ? 'transport' : /fuel|diesel|nepa|power/.test(lower) ? 'power' : 'other';
-      return res.json({
-        intent: 'record_expense',
-        language,
-        transcript: text,
-        entities: { category, totalAmount: amount, note: text },
-        confidence: amount ? 0.9 : 0.5,
-        confirmationMessage: `Record ₦${(amount || 0).toLocaleString()} expense for ${category}?`,
-      });
+      const category = /transport|bus|okada/.test(lower) ? 'transport' : 'other';
+      return res.json(proposal('record_expense', language, text, { category, total_amount: amount }, amount ? 0.9 : 0.5,
+        `Record ₦${(amount || 0).toLocaleString()} expense for ${category}?`));
     }
-
-    res.json({
-      intent: 'other',
-      language,
-      transcript: text,
-      entities: {},
-      confidence: 0.3,
-      confirmationMessage: 'Sorry, I did not understand. Please say it again.',
-    });
+    res.json(proposal('unknown', language, text, {}, 0.3, 'Sorry, I did not understand. Please say it again.'));
   });
 
   app.post('/parse-receipt', upload.single('image'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'image file is required' });
-    const language = req.body.language || 'en';
-    const context = parseContext(req.body.context);
-    const match = (word) => findProduct(word, context.products);
-
+    if (!req.file) return res.status(422).json({ detail: 'image is required' });
+    const catalogue = parseCatalogue(req.body.catalogue_json);
     const lines = [
-      { word: 'rice', fallback: 'Mama Gold Rice 50kg', quantity: 20, unit: 'bag', unitCost: 78000 },
-      { word: 'oil', fallback: 'Golden Terra Vegetable Oil 25L', quantity: 10, unit: 'carton', unitCost: 45000 },
-      { word: 'indomie', fallback: 'Indomie Super Pack Carton', quantity: 15, unit: 'carton', unitCost: 8200 },
+      { word: 'rice', name: 'Mama Gold Rice 50kg', quantity: 20, unit: 'bag', unit_price: 78000 },
+      { word: 'oil', name: 'Golden Terra Vegetable Oil 25L', quantity: 10, unit: 'carton', unit_price: 45000 },
+      { word: 'indomie', name: 'Indomie Super Pack Carton', quantity: 15, unit: 'carton', unit_price: 8200 },
     ];
     const items = lines.map((l) => {
-      const product = match(l.word);
-      return {
-        product: product ? product.name : l.fallback,
-        productId: product ? product.id : null,
-        quantity: l.quantity,
-        unit: l.unit,
-        unitCost: l.unitCost,
-        subtotal: l.quantity * l.unitCost,
-      };
+      const product = findProduct(l.word, catalogue);
+      return { name: l.name, quantity: l.quantity, unit: l.unit, unit_price: l.unit_price, line_total: l.quantity * l.unit_price, matched_product_id: product ? product.id : null };
     });
-    const total = items.reduce((sum, it) => sum + it.subtotal, 0);
-
-    res.json({
-      intent: 'add_inventory',
-      language,
-      transcript: 'Supplier invoice: Alaba Wholesale Mills Ltd',
-      entities: { supplier: 'Alaba Wholesale Mills Ltd', totalAmount: total, items },
-      confidence: 0.87,
-      confirmationMessage: `Add ${items.length} items from Alaba Wholesale Mills Ltd (₦${total.toLocaleString()}) to inventory?`,
-    });
+    const total = items.reduce((sum, it) => sum + it.line_total, 0);
+    res.json({ supplier: 'Alaba Wholesale Mills Ltd', items, total, currency: 'NGN', confidence: 0.87, warnings: [], raw_text: '', confirmation_message: '' });
   });
 
   app.post('/ask', (req, res) => {
-    const { query = '', language = 'en', context = {} } = req.body;
-    const product = findProduct(query, context.inventory);
-
+    const { question = '', language = 'en', snapshot = {} } = req.body;
+    const product = findProduct(question, snapshot.products || []);
     if (product) {
       return res.json({
-        answer: `[mock-ml] You have ${product.currentStock} ${product.unit}(s) of ${product.name}, about ${product.daysOfStockLeft} days of stock.`,
+        answer: `[mock-ml] You have ${product.stock} ${product.unit}(s) of ${product.name}.`,
         language,
-        category: 'stock_inquiry',
-        data: { productId: product.id, currentStock: product.currentStock, daysOfStockLeft: product.daysOfStockLeft },
+        facts_used: { product_id: product.id, stock: product.stock, avg_daily_sales: product.avg_daily_sales },
       });
     }
-    if (/profit/.test(query.toLowerCase()) && context.profit) {
-      return res.json({
-        answer: `[mock-ml] Your net profit for the last 30 days is ₦${context.profit.netProfit.toLocaleString()}.`,
-        language,
-        category: 'profit_inquiry',
-        data: context.profit,
-      });
-    }
-    res.json({ answer: '[mock-ml] I can answer questions about stock, profit and debts.', language, category: 'general_assistant', data: {} });
+    res.json({ answer: '[mock-ml] I can answer questions about stock, profit and debts.', language, facts_used: {} });
   });
 
   app.post('/insights', (req, res) => {
-    const { language = 'en', context = {} } = req.body;
-    const products = (context.salesRate && context.salesRate.products) || [];
-    const insights = products
-      .filter((p) => p.daysOfStockLeft !== null && p.daysOfStockLeft < 10)
+    const products = (req.body.snapshot && req.body.snapshot.products) || [];
+    const alerts = products
+      .filter((p) => p.avg_daily_sales > 0 && p.stock / p.avg_daily_sales < 10)
       .slice(0, 2)
       .map((p) => ({
-        key: `restock_before_weekend:${p.productId}`,
         type: 'restock',
-        title: `[mock-ml] Order ${p.name} this week`,
-        message: `[mock-ml] ${p.name} will run out in about ${Math.round(p.daysOfStockLeft)} days. Order before Friday.`,
-        severity: p.daysOfStockLeft < 3 ? 'warning' : 'info',
-        data: { productId: p.productId, daysOfStockLeft: p.daysOfStockLeft },
+        severity: p.stock / p.avg_daily_sales < 3 ? 'high' : 'low',
+        message: `[mock-ml] ${p.name} will run out in about ${Math.round(p.stock / p.avg_daily_sales)} days. Order before Friday.`,
+        product_id: p.id,
       }));
-    res.json({ language, insights });
+    res.json({ alerts });
+  });
+
+  app.post('/forecast', (req, res) => {
+    const { snapshot = {}, purchase_price: price = null } = req.body;
+    const flows = snapshot.monthly_net_cashflow || [];
+    const avg = flows.length ? flows.reduce((a, b) => a + b, 0) / flows.length : null;
+    res.json({
+      stock: (snapshot.products || []).map((p) => ({ product_id: p.id, product_name: p.name, days_left: p.avg_daily_sales ? p.stock / p.avg_daily_sales : null, restock_advice: '' })),
+      avg_monthly_net_cashflow: avg,
+      next_month_net_cashflow: avg,
+      health_score: 70,
+      affordability: price === null ? null : { can_afford: avg !== null && price <= avg * 0.4, safe_min: 0, safe_max: Math.max(0, (avg || 0) * 0.4), explanation: '[mock-ml]' },
+    });
   });
 
   return app;
 };
-
 
 module.exports = { createMockMlApp };

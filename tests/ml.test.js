@@ -248,7 +248,7 @@ const run = async () => {
       await Alert.deleteMany({ businessId, type: 'insight' });
       const created = await generateInsights(businessId);
       assert.ok(created.length >= 1, 'mock returns restock insights for fast sellers');
-      assert.ok(created.every((a) => a.metadata.engine === 'ml' && a.title.startsWith('[mock-ml]')));
+      assert.ok(created.every((a) => a.metadata.engine === 'ml' && a.message.startsWith('[mock-ml]')));
       assert.equal((await generateInsights(businessId)).length, 0, 'same insight keys are not repeated');
     });
 

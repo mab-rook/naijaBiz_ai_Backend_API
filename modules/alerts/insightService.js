@@ -1,7 +1,6 @@
 const Alert = require('./alertModel');
-const Business = require('../auth/businessModel');
-const User = require('../auth/userModel');
 const mlService = require('../ai/mlService');
+const { buildMlSnapshot } = require('../ai/mlSnapshotService');
 const { getSalesRate, getDailySales, getProfitAndLoss, getCashFlow } = require('../reports/reportService');
 
 /**
@@ -14,6 +13,7 @@ const { getSalesRate, getDailySales, getProfitAndLoss, getCashFlow } = require('
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REPEAT_AFTER_MS = 7 * DAY_MS;
 const MAX_INSIGHTS_PER_RUN = 5;
+const BACKEND_ALERT_TYPES = ['low_stock', 'out_of_stock', 'restock_suggestion', 'sales_drop', 'rising_expenses', 'overdue_debt'];
 const SEVERITIES = ['info', 'warning', 'critical'];
 const LANGUAGES = ['yo', 'ha', 'ig'];
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday'];
@@ -90,22 +90,17 @@ const sanitizeInsight = (raw) => {
   };
 };
 
-const getOwnerLanguage = async (businessId) => {
-  const business = await Business.findById(businessId).select('owner');
-  const owner = business && (await User.findById(business.owner).select('preferredLanguage'));
-  return (owner && owner.preferredLanguage) || 'en';
-};
-
 /** Ask the ML service first; fall back to local rules. Returns { engine, insights } */
 const computeInsights = async (businessId) => {
   const context = await buildInsightContext(businessId);
 
   if (mlService.isEnabled()) {
     try {
-      const language = await getOwnerLanguage(businessId);
-      const result = await mlService.insights({ businessId: String(businessId), language, context });
+      const result = await mlService.insights({ snapshot: await buildMlSnapshot(businessId) });
       const list = Array.isArray(result && result.insights) ? result.insights : [];
-      return { engine: 'ml', insights: list.map(sanitizeInsight).filter(Boolean).slice(0, MAX_INSIGHTS_PER_RUN) };
+      // The backend already raises these alerts itself; keep only what the ML service adds
+      const fresh = list.filter((i) => i && !BACKEND_ALERT_TYPES.includes(i.type));
+      return { engine: 'ml', insights: fresh.map(sanitizeInsight).filter(Boolean).slice(0, MAX_INSIGHTS_PER_RUN) };
     } catch (err) {
       console.warn(`[insights] ML insights failed, using local rules: ${err.message}`);
     }

@@ -2,11 +2,9 @@ const mongoose = require('mongoose');
 const Product = require('../products/productModel');
 const Customer = require('../debts/customerModel');
 const Debt = require('../debts/debtModel');
-const { getStockSummary } = require('../inventory/stockService');
-const { getDashboardMetrics } = require('../dashboard/financialService');
-const { getDebtLedger } = require('../debts/debtService');
 const { escapeRegex } = require('../../common/utils/regex');
 const mlService = require('./mlService');
+const { buildMlSnapshot } = require('./mlSnapshotService');
 const localAi = require('./localAiService');
 
 /**
@@ -57,42 +55,6 @@ const buildCatalogContext = async (businessId) => {
       currentStock: p.currentStock,
     })),
     customers: customers.map((c) => ({ id: String(c._id), name: c.name })),
-  };
-};
-
-/** Business data snapshot so the ML service can answer "Ask My Business" questions */
-const buildBusinessSnapshot = async (businessId) => {
-  const [metrics, stock, debts] = await Promise.all([
-    getDashboardMetrics(businessId, '30d'),
-    getStockSummary(businessId),
-    getDebtLedger(businessId),
-  ]);
-  return {
-    businessId: String(businessId),
-    currency: 'NGN',
-    period: 'last_30_days',
-    revenue: metrics.revenue,
-    expenses: metrics.expenses,
-    profit: metrics.profit,
-    cashPosition: metrics.cashPosition,
-    inventory: stock.products.map((p) => ({
-      id: String(p._id),
-      name: p.name,
-      unit: p.unit,
-      currentStock: p.currentStock,
-      minimumStock: p.minimumStock,
-      sellingPrice: p.sellingPrice,
-      costPrice: p.costPrice,
-      daysOfStockLeft: p.daysOfStockLeft,
-      status: p.status,
-    })),
-    debts: {
-      totalOutstanding: debts.totalOutstandingAmount,
-      activeDebtors: debts.activeDebtorsCount,
-      debtors: debts.debts
-        .filter((d) => d.balanceRemaining > 0)
-        .map((d) => ({ customer: d.customer.name, balance: d.balanceRemaining, daysOutstanding: d.daysOutstanding })),
-    },
   };
 };
 
@@ -272,8 +234,8 @@ const parseReceipt = async (businessId, { file, language, receiptData }) => {
 const askMyBusiness = async (businessId, query, language) => {
   if (mlService.isEnabled()) {
     try {
-      const context = await buildBusinessSnapshot(businessId);
-      const result = await mlService.ask({ query, language, context });
+      const snapshot = await buildMlSnapshot(businessId);
+      const result = await mlService.ask({ query, language, snapshot });
       if (result && result.answer) {
         return {
           query,
