@@ -249,3 +249,21 @@ Before deploying:
    and the Cloudinary credentials. Without
    Cloudinary, voice and receipt uploads are refused in production.
 3. After deploying, open `/health` and check that it shows `"databaseType": "mongodb"`.
+
+## CI/CD
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`:
+
+1. **Test:** installs dependencies and runs `npm test`. No secrets are needed, because the tests use
+   their own temporary database and a stand-in ML service.
+2. **Deploy:** only after the tests pass on `main`, it triggers a Render deploy through a deploy hook,
+   then checks `/health` until the new version reports a MongoDB connection.
+
+Setup (once):
+
+1. In Render, open the service, go to **Settings**, copy the **Deploy Hook** URL, and set
+   **Auto-Deploy** to **No** so that only tested code is deployed.
+2. In GitHub, open the repository, go to **Settings > Secrets and variables > Actions**, and add a
+   secret named `RENDER_DEPLOY_HOOK_URL` with that URL.
+
+Pull requests run the tests but never deploy.

@@ -1,0 +1,85 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    # mongodb-memory-server downloads a MongoDB build that matches this Ubuntu version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache MongoDB test binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        # Tests use their own in-memory database and a stand-in ML service; no secrets needed
+        run: npm test
+        env:
+          CI: true
+
+  deploy:
+    name: Deploy to Render
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      HEALTH_URL: https://naijabiz-ai-backend-api.onrender.com/health
+
+    steps:
+      - name: Trigger Render deploy
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        run: curl --fail --silent --show-error -X POST "$RENDER_DEPLOY_HOOK_URL" > /dev/null
+
+      - name: Deploy hook not configured
+        if: env.RENDER_DEPLOY_HOOK_URL == ''
+        run: echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set, so nothing was deployed."
+
+      - name: Wait for the API to be healthy
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        run: |
+          # Give Render time to build and switch over, then check /health for up to 10 minutes
+          sleep 120
+          for attempt in $(seq 1 16); do
+            body=$(curl --silent --max-time 60 "$HEALTH_URL" || true)
+            echo "Attempt $attempt: $body"
+            if echo "$body" | grep -q '"databaseType":"mongodb"'; then
+              echo "API is up and connected to MongoDB."
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::The API did not report a healthy MongoDB connection after deploying."
+          exit 1
