@@ -19,6 +19,7 @@ const corsOptions = {
     // No CORS headers -> the browser blocks the response
     return callback(null, false);
   },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Retry-After', 'RateLimit-Limit', 'RateLimit-Remaining'],
