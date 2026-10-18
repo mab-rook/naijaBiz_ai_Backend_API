@@ -10,6 +10,9 @@ which this backend calls over HTTP.
 
 Built with Node.js, Express, MongoDB (Mongoose), JWT authentication and Swagger (OpenAPI 3).
 
+## Live Website
+Click on this link to check the WEB APP out : https://naijabiz-ai.onrender.com
+
 ## Live API
 
 | What | Where |
